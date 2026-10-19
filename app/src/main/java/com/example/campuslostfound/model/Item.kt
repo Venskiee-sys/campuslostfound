@@ -1,7 +1,9 @@
 package com.example.campuslostfound.model
 
-import com.google.firebase.Timestamp
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class Item(
     val id: String = "",
     val name: String = "",
@@ -10,9 +12,14 @@ data class Item(
     val date: String = "",
     val description: String = "",
     val type: String = "", // "Lost" or "Found"
+    @SerialName("reported_by")
     val reportedBy: String = "", // User UID
+    @SerialName("reporter_name")
     val reporterName: String = "",
-    val timestamp: Timestamp = Timestamp.now(),
+    /** Epoch milliseconds (UTC) — was a Firestore Timestamp. */
+    @SerialName("created_at")
+    val timestamp: Long = System.currentTimeMillis(),
+    @SerialName("image_url")
     val imageUrl: String? = null,
     val status: String = "Open" // "Open" or "Resolved"
 )

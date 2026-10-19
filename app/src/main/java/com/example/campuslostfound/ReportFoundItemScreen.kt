@@ -4,41 +4,43 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddAPhoto
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.outlined.DateRange
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.example.campuslostfound.ui.components.*
+import com.example.campuslostfound.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -48,33 +50,51 @@ fun ReportFoundItemScreen(
     authViewModel: AuthViewModel,
     itemViewModel: ItemViewModel,
     onBackClick: () -> Unit,
-    onSubmitClick: () -> Unit
+    onSubmitClick: () -> Unit,
+    onSwitchTypeClick: () -> Unit = {},
+    onPickLocationClick: () -> Unit = {},
+    pickedLocation: String? = null,
+    onLocationConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var itemName by remember { mutableStateOf("") }
-    var location by remember { mutableStateOf("") }
-    var dateFound by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
+    // rememberSaveable: rotating the device (or coming back from the map picker)
+    // used to wipe the whole form while the date picker survived.
+    var itemName by rememberSaveable { mutableStateOf("") }
+    var location by rememberSaveable { mutableStateOf("") }
+    var dateFound by rememberSaveable { mutableStateOf("") }
+    var description by rememberSaveable { mutableStateOf("") }
 
     // Category Selection State
     val categories = listOf("Bags", "Electronics", "Documents", "Personal Items", "Others")
     var expanded by remember { mutableStateOf(false) }
-    var selectedCategory by remember { mutableStateOf("") }
-    var otherCategory by remember { mutableStateOf("") }
+    var selectedCategory by rememberSaveable { mutableStateOf("") }
+    var otherCategory by rememberSaveable { mutableStateOf("") }
 
-    // Photo State
-    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    // Photo State (stored as a string so it survives state restoration)
+    var imageUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    val imageUri = imageUriString?.let(Uri::parse)
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? -> imageUri = uri }
+    ) { uri: Uri? -> imageUriString = uri?.toString() }
 
     var localErrorMessage by remember { mutableStateOf<String?>(null) }
     val isLoading = itemViewModel.isLoading.value
     val firebaseError = itemViewModel.errorMessage.value
 
-    // Date Picker State
+    // A location chosen on the map screen.
+    LaunchedEffect(pickedLocation) {
+        if (!pickedLocation.isNullOrBlank()) {
+            location = pickedLocation
+            onLocationConsumed()
+        }
+    }
+
+    // Date Picker State — pre-selected so tapping OK without picking a day
+    // doesn't silently do nothing.
     var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState()
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = System.currentTimeMillis()
+    )
 
     if (showDatePicker) {
         DatePickerDialog(
@@ -82,63 +102,197 @@ fun ReportFoundItemScreen(
             confirmButton = {
                 TextButton(onClick = {
                     datePickerState.selectedDateMillis?.let {
-                        val sdf = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
-                        dateFound = sdf.format(Date(it))
+                        dateFound = formatPickerDate(it)
+                        localErrorMessage = null
                     }
                     showDatePicker = false
-                }) { Text("OK") }
+                }) { Text("OK", color = UniFindPrimary) }
             },
-            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("CANCEL") } }
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("CANCEL", color = UniFindTextSecondary) } }
         ) { DatePicker(state = datePickerState) }
     }
 
     LaunchedEffect(Unit) { itemViewModel.clearError() }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(text = "Report Found Item", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
-                        Text(text = "Help return an item", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f), fontSize = 13.sp)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
-            )
+    val formIsValid = itemName.isNotBlank() &&
+        selectedCategory.isNotBlank() &&
+        (selectedCategory != "Others" || otherCategory.isNotBlank()) &&
+        location.isNotBlank() &&
+        dateFound.isNotBlank()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(UniFindBackground)
+            // Lifts the whole form — including the pinned submit bar — above the
+            // keyboard, so typing in the lower fields never hides "Post Report".
+            .imePadding()
+    ) {
+        // ------------------------------------------------------------------
+        // Top bar: back + title
+        // ------------------------------------------------------------------
+        ScreenHeader(
+            title = "Report an Item",
+            onBack = onBackClick,
+            subtitle = "Help return an item",
+            actions = { StatusTag(type = "Found") }
+        )
+
+        // ------------------------------------------------------------------
+        // Segmented lost / found toggle — active side is dark green
+        // ------------------------------------------------------------------
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, bottom = 16.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(UniFindWhite)
+                .border(1.dp, UniFindOutline, RoundedCornerShape(16.dp))
+                .padding(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onSwitchTypeClick)
+                    .padding(vertical = 11.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "I lost something",
+                    color = UniFindText,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(UniFindPrimary)
+                    .padding(vertical = 11.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "I found something",
+                    color = UniFindOnPrimary,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
-    ) { paddingValues ->
+
+        // ------------------------------------------------------------------
+        // Scrolling form
+        // ------------------------------------------------------------------
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(paddingValues)
+                .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(text = "Found Item Information", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-            Text(text = "Please provide details about the item you found.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(Modifier.height(2.dp))
 
-            OutlinedTextField(
+            // Dashed photo upload box
+            if (imageUri != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(170.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                ) {
+                    AsyncImage(
+                        model = imageUri,
+                        contentDescription = "Selected Photo",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    IconButton(
+                        onClick = { imageUriString = null },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(UniFindWhite)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Close,
+                            contentDescription = "Remove Photo",
+                            tint = UniFindText,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(UniFindHighlight)
+                        .drawBehind {
+                            val inset = 1.dp.toPx()
+                            drawRoundRect(
+                                color = UniFindOutline,
+                                topLeft = Offset(inset, inset),
+                                size = Size(size.width - inset * 2, size.height - inset * 2),
+                                cornerRadius = CornerRadius(17.dp.toPx()),
+                                style = Stroke(
+                                    width = 1.5.dp.toPx(),
+                                    pathEffect = PathEffect.dashPathEffect(
+                                        floatArrayOf(14f, 10f),
+                                        0f
+                                    )
+                                )
+                            )
+                        }
+                        .clickable { launcher.launch("image/*") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(UniFindWhite),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Outlined.PhotoCamera,
+                                contentDescription = "Add photos",
+                                tint = UniFindPrimary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = "Add a photo",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = UniFindText
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "PNG or JPG",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = UniFindTextTertiary
+                        )
+                    }
+                }
+            }
+
+            // Item name
+            ReportFoundField(
                 value = itemName,
-                onValueChange = { itemName = it },
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface),
-                label = { Text("Item Name") },
-                placeholder = { Text("e.g. Black Wallet") },
-                leadingIcon = { Icon(imageVector = Icons.Default.Category, contentDescription = "Item") },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
+                onValueChange = { itemName = it; localErrorMessage = null },
+                label = "Item Name",
+                placeholder = "e.g. Black Wallet",
+                leadingIcon = Icons.Outlined.Inventory2
             )
 
-            // CATEGORY
+            // Category dropdown
             ExposedDropdownMenuBox(
                 expanded = expanded,
                 onExpandedChange = { expanded = !expanded },
@@ -149,10 +303,16 @@ fun ReportFoundItemScreen(
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Category") },
-                    leadingIcon = { Icon(imageVector = Icons.Default.Category, contentDescription = null) },
+                    leadingIcon = {
+                        Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(20.dp))
+                    },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    // PrimaryNotEditable: the field is readOnly and only opens
+                    // the menu — the parameterless menuAnchor() overload that
+                    // this replaced is deprecated.
+                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = reportFoundFieldColors()
                 )
                 ExposedDropdownMenu(
                     expanded = expanded,
@@ -161,7 +321,11 @@ fun ReportFoundItemScreen(
                     categories.forEach { selectionOption ->
                         DropdownMenuItem(
                             text = { Text(selectionOption) },
-                            onClick = { selectedCategory = selectionOption; expanded = false },
+                            onClick = {
+                                selectedCategory = selectionOption
+                                localErrorMessage = null
+                                expanded = false
+                            },
                             contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
                         )
                     }
@@ -169,129 +333,206 @@ fun ReportFoundItemScreen(
             }
 
             if (selectedCategory == "Others") {
-                OutlinedTextField(
+                ReportFoundField(
                     value = otherCategory,
-                    onValueChange = { otherCategory = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface),
-                    label = { Text("Please specify category") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp)
+                    onValueChange = { otherCategory = it; localErrorMessage = null },
+                    label = "Please specify category",
+                    placeholder = "e.g. Student ID",
+                    leadingIcon = Icons.Outlined.Edit
                 )
             }
 
-            OutlinedTextField(
-                value = location,
-                onValueChange = { location = it },
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface),
-                label = { Text("Location Found") },
-                placeholder = { Text("e.g. Library") },
-                leadingIcon = { Icon(imageVector = Icons.Default.LocationOn, contentDescription = "Location") },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
+            // Description
+            ReportFoundField(
+                value = description,
+                onValueChange = { description = it; localErrorMessage = null },
+                label = "Description",
+                placeholder = "Describe the item, color, brand, or anything that can help identify it.",
+                leadingIcon = Icons.Outlined.Description,
+                // Grows with the typed text (up to maxLines) instead of clipping it
+                // at large font scales.
+                modifier = Modifier.heightIn(min = 140.dp, max = 240.dp),
+                multiline = true
             )
 
+            // Location + Change link
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ReportFoundField(
+                    value = location,
+                    onValueChange = { location = it; localErrorMessage = null },
+                    label = "Location Found",
+                    placeholder = "e.g. Library",
+                    leadingIcon = Icons.Outlined.LocationOn,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = "Change",
+                    color = UniFindSecondary,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onPickLocationClick)
+                        .padding(horizontal = 6.dp, vertical = 14.dp)
+                )
+            }
+
+            // Date
             OutlinedTextField(
                 value = dateFound,
-                onValueChange = { dateFound = it },
-                modifier = Modifier.fillMaxWidth().clickable { showDatePicker = true },
+                onValueChange = { },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showDatePicker = true },
                 readOnly = true,
                 enabled = false,
-                textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface),
                 label = { Text("Date Found") },
                 placeholder = { Text("e.g. September 3, 2026") },
-                leadingIcon = { Icon(imageVector = Icons.Default.CalendarToday, contentDescription = "Date") },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                    disabledBorderColor = MaterialTheme.colorScheme.outline,
-                    disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    disabledPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            )
-
-            OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                modifier = Modifier.fillMaxWidth().height(130.dp),
-                textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface),
-                label = { Text("Description") },
-                placeholder = { Text("Describe the item, color, brand, or anything that can help identify it.") },
-                singleLine = false,
-                maxLines = 5,
-                shape = RoundedCornerShape(12.dp)
-            )
-
-            // PHOTO SECTION
-            Text(text = "Item Photo", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-            
-            if (imageUri != null) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(12.dp)).background(Color.LightGray)
-                ) {
-                    AsyncImage(
-                        model = imageUri,
-                        contentDescription = "Selected Photo",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                    IconButton(
-                        onClick = { imageUri = null },
-                        modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    ) { Icon(Icons.Default.Close, contentDescription = "Remove Photo", tint = Color.White) }
-                }
-            } else {
-                Button(
-                    onClick = { launcher.launch("image/*") },
-                    modifier = Modifier.fillMaxWidth().height(55.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(imageVector = Icons.Default.AddAPhoto, contentDescription = "Add Photo", tint = MaterialTheme.colorScheme.onPrimary)
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text(text = "Add Photo", color = MaterialTheme.colorScheme.onPrimary)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            val displayError = localErrorMessage ?: firebaseError
-            displayError?.let { Text(text = it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-
-            Button(
-                onClick = {
-                    val finalCategory = if (selectedCategory == "Others") otherCategory else selectedCategory
-                    val user = authViewModel.userData.value
-                    if (user != null) {
-                        itemViewModel.reportItem(
-                            name = itemName,
-                            category = finalCategory,
-                            location = location,
-                            date = dateFound,
-                            description = description,
-                            type = "Found",
-                            userId = user.uid,
-                            userName = user.fullName,
-                            imageUri = imageUri,
-                            context = context,
-                            onSuccess = onSubmitClick
-                        )
-                    } else { localErrorMessage = "User data not loaded" }
+                leadingIcon = {
+                    Icon(Icons.Outlined.DateRange, contentDescription = null, modifier = Modifier.size(20.dp))
                 },
-                modifier = Modifier.fillMaxWidth().height(55.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                shape = RoundedCornerShape(12.dp),
-                enabled = !isLoading && itemName.isNotBlank() && selectedCategory.isNotBlank() && (selectedCategory != "Others" || otherCategory.isNotBlank()) && location.isNotBlank() && dateFound.isNotBlank()
+                trailingIcon = {
+                    // A real button: TalkBack can activate it, and it always opens
+                    // the picker even where the disabled field swallows taps.
+                    IconButton(onClick = { showDatePicker = true }) {
+                        Icon(
+                            Icons.Outlined.DateRange,
+                            contentDescription = "Pick date found",
+                            modifier = Modifier.size(20.dp),
+                            tint = UniFindPrimary
+                        )
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = reportFoundFieldColors()
+            )
+
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // ------------------------------------------------------------------
+        // Pinned submit button
+        // ------------------------------------------------------------------
+        Surface(
+            color = UniFindWhite,
+            shadowElevation = 12.dp,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
             ) {
+                val displayError = localErrorMessage ?: firebaseError
+                displayError?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(bottom = 10.dp)
+                    )
+                }
                 if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(UniFindPrimary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = UniFindOnPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    }
                 } else {
-                    Text(text = "SUBMIT FOUND ITEM", color = MaterialTheme.colorScheme.onPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    PrimaryButton(
+                        text = "Post Report",
+                        onClick = {
+                            val finalCategory = if (selectedCategory == "Others") otherCategory else selectedCategory
+                            val user = authViewModel.userData.value
+                            if (user != null) {
+                                itemViewModel.reportItem(
+                                    name = itemName,
+                                    category = finalCategory,
+                                    location = location,
+                                    date = dateFound,
+                                    description = description,
+                                    type = "Found",
+                                    userId = user.uid,
+                                    userName = user.fullName,
+                                    imageUri = imageUri,
+                                    context = context,
+                                    onSuccess = onSubmitClick
+                                )
+                            } else { localErrorMessage = "User data not loaded" }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = formIsValid
+                    )
                 }
             }
-            Spacer(modifier = Modifier.height(20.dp))
         }
     }
+}
+
+/** Shared UniFind field styling: soft `SurfaceAlt` fill, 16dp corners. */
+@Composable
+private fun reportFoundFieldColors(): TextFieldColors =
+    OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = UniFindSurfaceAlt,
+        unfocusedContainerColor = UniFindSurfaceAlt,
+        disabledContainerColor = UniFindSurfaceAlt,
+        focusedTextColor = UniFindText,
+        unfocusedTextColor = UniFindText,
+        disabledTextColor = UniFindText,
+        cursorColor = UniFindPrimary,
+        focusedBorderColor = UniFindPrimary,
+        unfocusedBorderColor = Color.Transparent,
+        disabledBorderColor = Color.Transparent,
+        focusedLabelColor = UniFindPrimary,
+        unfocusedLabelColor = UniFindTextSecondary,
+        disabledLabelColor = UniFindTextSecondary,
+        focusedPlaceholderColor = UniFindTextTertiary,
+        unfocusedPlaceholderColor = UniFindTextTertiary,
+        disabledPlaceholderColor = UniFindTextTertiary,
+        focusedLeadingIconColor = UniFindPrimary,
+        unfocusedLeadingIconColor = UniFindTextSecondary,
+        disabledLeadingIconColor = UniFindTextSecondary,
+        focusedTrailingIconColor = UniFindPrimary,
+        unfocusedTrailingIconColor = UniFindTextSecondary
+    )
+
+@Composable
+private fun ReportFoundField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    placeholder: String,
+    leadingIcon: ImageVector,
+    modifier: Modifier = Modifier,
+    multiline: Boolean = false
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        label = { Text(label) },
+        placeholder = { Text(placeholder) },
+        leadingIcon = {
+            Icon(leadingIcon, contentDescription = null, modifier = Modifier.size(20.dp))
+        },
+        singleLine = !multiline,
+        maxLines = if (multiline) 6 else 1,
+        shape = RoundedCornerShape(16.dp),
+        colors = reportFoundFieldColors()
+    )
 }

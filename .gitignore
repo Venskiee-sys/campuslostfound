@@ -1,0 +1,25 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Kotlin build daemon (Kotlin 2.x) session files
+.kotlin/
+
+# Android Studio generated module descriptors
+/.idea/modules/
+
+# JVM crash logs from Gradle/Kotlin daemons (low-RAM dev machine)
+hs_err_pid*.log
+replay_pid*.log

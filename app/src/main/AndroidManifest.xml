@@ -3,6 +3,9 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Blue dot + "My location" on the campus map picker -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
         android:allowBackup="true"
@@ -16,7 +19,6 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:theme="@style/Theme.CampusLostFound"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -26,10 +28,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Google Maps API Key -->
+        <!-- Google Maps API Key (supplied by manifestPlaceholders["MAPS_API_KEY"]
+             in app/build.gradle.kts; set maps.apiKey in gradle.properties) -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="YOUR_API_KEY_HERE" />
+            android:value="${MAPS_API_KEY}" />
     </application>
 
 </manifest>

@@ -1,82 +1,90 @@
 package com.example.campuslostfound
 
+import android.util.Log
 import com.example.campuslostfound.model.Notification
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.channels.awaitClose
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 
+/**
+ * Notifications on Supabase Postgres (was Firestore collection "notifications").
+ * Reads are live flows kept up to date by Supabase Realtime.
+ * Writes keep the old fire-and-forget signatures (they run on [SupabaseProvider.ioScope]).
+ */
 class NotificationRepository {
-    private val db = FirebaseFirestore.getInstance()
-    private val notificationsCollection = db.collection("notifications")
 
-    fun getNotifications(userId: String): Flow<List<Notification>> = callbackFlow {
-        val listener = notificationsCollection
-            .whereEqualTo("userId", userId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    trySend(emptyList())
-                    return@addSnapshotListener
+    private val supabase get() = SupabaseProvider.client
+
+    fun getNotifications(userId: String): Flow<List<Notification>> =
+        SupabaseProvider.liveTableFlow("notifications") {
+            supabase.postgrest["notifications"].select {
+                filter {
+                    eq("user_id", userId)
                 }
-                val notifs = snapshot?.toObjects(Notification::class.java) ?: emptyList()
-                // Sort manually in Kotlin to avoid index issues
-                val sortedNotifs = notifs.sortedByDescending { it.timestamp }
-                trySend(sortedNotifs)
-            }
-        awaitClose { listener.remove() }
-    }
+                order("created_at", Order.DESCENDING)
+            }.decodeList<Notification>()
+        }
 
     fun markMessagesAsRead(userId: String, chatId: String) {
-        notificationsCollection
-            .whereEqualTo("userId", userId)
-            .whereEqualTo("relatedId", chatId)
-            .get()
-            .addOnSuccessListener { snapshot ->
-                val batch = db.batch()
-                var hasUpdates = false
-                for (doc in snapshot.documents) {
-                    val isSeen = doc.getBoolean("seen") ?: false
-                    val type = doc.getString("type") ?: ""
-                    if (!isSeen && type == "Message") {
-                        batch.update(doc.reference, "seen", true)
-                        batch.update(doc.reference, "isRead", true)
-                        hasUpdates = true
+        SupabaseProvider.ioScope.launch {
+            runCatching {
+                supabase.postgrest["notifications"].update({
+                    set("seen", true)
+                }) {
+                    filter {
+                        eq("user_id", userId)
+                        eq("related_id", chatId)
+                        eq("type", "Message")
+                        eq("seen", false)
                     }
                 }
-                if (hasUpdates) batch.commit()
-            }
+            }.onFailure { Log.e(TAG, "markMessagesAsRead failed", it) }
+        }
     }
 
     fun markAsRead(notificationId: String) {
-        notificationsCollection.document(notificationId).update("seen", true)
+        SupabaseProvider.ioScope.launch {
+            runCatching {
+                supabase.postgrest["notifications"].update({
+                    set("seen", true)
+                }) {
+                    filter {
+                        eq("id", notificationId)
+                    }
+                }
+            }.onFailure { Log.e(TAG, "markAsRead failed", it) }
+        }
     }
 
     fun markAllAsRead(userId: String) {
-        notificationsCollection
-            .whereEqualTo("userId", userId)
-            .get()
-            .addOnSuccessListener { snapshot ->
-                if (snapshot.isEmpty) return@addOnSuccessListener
-                
-                val batch = db.batch()
-                var hasUpdates = false
-                for (doc in snapshot.documents) {
-                    // Check if it needs updating (handle both seen and isRead for compatibility)
-                    val isSeen = doc.getBoolean("seen") ?: false
-                    val oldIsRead = doc.getBoolean("isRead") ?: false
-                    
-                    if (!isSeen || !oldIsRead) {
-                        batch.update(doc.reference, "seen", true)
-                        batch.update(doc.reference, "isRead", true) // Clean up old field too
-                        hasUpdates = true
+        SupabaseProvider.ioScope.launch {
+            runCatching {
+                supabase.postgrest["notifications"].update({
+                    set("seen", true)
+                }) {
+                    filter {
+                        eq("user_id", userId)
+                        eq("seen", false)
                     }
                 }
-                if (hasUpdates) batch.commit()
-            }
+            }.onFailure { Log.e(TAG, "markAllAsRead failed", it) }
+        }
     }
 
     fun sendNotification(notification: Notification) {
-        val doc = notificationsCollection.document()
-        notificationsCollection.document(doc.id).set(notification.copy(id = doc.id))
+        // A blank recipient (unknown other participant) would insert a row nobody
+        // can ever read — skip it instead of writing orphaned data.
+        if (notification.userId.isBlank()) return
+        SupabaseProvider.ioScope.launch {
+            // id stays "" → omitted → the database generates a uuid.
+            runCatching {
+                supabase.postgrest["notifications"].insert(notification)
+            }.onFailure { Log.e(TAG, "sendNotification failed", it) }
+        }
+    }
+
+    companion object {
+        private const val TAG = "NotificationRepository"
     }
 }

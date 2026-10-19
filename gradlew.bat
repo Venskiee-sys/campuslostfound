@@ -26,11 +26,14 @@
 @rem Set local scope for the variables with windows NT shell
 if "%OS%"=="Windows_NT" setlocal
 
-set DIRNAME=%~dp0
-if "%DIRNAME%"=="" set DIRNAME=.
+@rem NOTE: quote these `set` calls. The project lives in "C:\Campus Lost & Found"
+@rem and an unquoted set splits the path at the ampersand, which fails with
+@rem "'Found\' is not recognized as an internal or external command".
+set "DIRNAME=%~dp0"
+if "%DIRNAME%"=="" set "DIRNAME=."
 @rem This is normally unused
-set APP_BASE_NAME=%~n0
-set APP_HOME=%DIRNAME%
+set "APP_BASE_NAME=%~n0"
+set "APP_HOME=%DIRNAME%"
 
 @rem Resolve any "." and ".." in APP_HOME to make it shorter.
 for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
@@ -54,8 +57,8 @@ echo location of your Java installation. 1>&2
 goto fail
 
 :findJavaFromJavaHome
-set JAVA_HOME=%JAVA_HOME:"=%
-set JAVA_EXE=%JAVA_HOME%/bin/java.exe
+set "JAVA_HOME=%JAVA_HOME:"=%"
+set "JAVA_EXE=%JAVA_HOME%\bin\java.exe"
 
 if exist "%JAVA_EXE%" goto execute
 

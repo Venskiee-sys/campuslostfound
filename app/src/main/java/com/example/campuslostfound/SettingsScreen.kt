@@ -2,52 +2,82 @@ package com.example.campuslostfound
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.HelpOutline
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.*
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.automirrored.outlined.Help
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.campuslostfound.ui.components.*
+import com.example.campuslostfound.ui.theme.*
 
 // ---------------------------------------------------------------------------
 // SETTINGS SCREEN
-// Same header/body theme as ProfileScreen: solid green header, white body.
+// White ScreenHeader over grouped white cards with section labels: appearance
+// toggle, preferences, help, and destructive account actions.
 // ---------------------------------------------------------------------------
 @Composable
 fun SettingsScreen(
     viewModel: AuthViewModel,
     onThemeChange: (Boolean) -> Unit = {},
-    onBackClick: () -> Unit = {}
+    onBackClick: () -> Unit = {},
+    onLogoutClick: (() -> Unit)? = null,
+    onDeleteAccountClick: (() -> Unit)? = null
 ) {
     var darkMode by remember { mutableStateOf(viewModel.isDarkMode()) }
     var selectedLanguage by remember { mutableStateOf(viewModel.getLanguage()) }
-    
+
     // Dialog States
     var showPrivacyDialog by remember { mutableStateOf(false) }
     var showTermsDialog by remember { mutableStateOf(false) }
     var showHelpDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
 
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -58,7 +88,7 @@ fun SettingsScreen(
 
     if (showChangePasswordDialog) {
         AlertDialog(
-            onDismissRequest = { 
+            onDismissRequest = {
                 showChangePasswordDialog = false
                 changePasswordMessage = null
                 newPassword = ""
@@ -66,10 +96,24 @@ fun SettingsScreen(
                 newPasswordVisible = false
                 confirmPasswordVisible = false
             },
-            title = { Text("Change Password") },
+            containerColor = UniFind.White,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text("Change Password", style = MaterialTheme.typography.titleMedium, color = UniFind.Text)
+            },
             text = {
-                Column {
-                    Text("Enter your new password below.")
+                // Scrollable + IME-aware: on short screens or with the keyboard up
+                // the second field and status message would otherwise be clipped.
+                Column(
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .imePadding()
+                ) {
+                    Text(
+                        "Enter your new password below.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = UniFind.TextSecondary
+                    )
                     Spacer(Modifier.height(16.dp))
                     OutlinedTextField(
                         value = newPassword,
@@ -77,16 +121,22 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("New Password") },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(16.dp),
                         visualTransformation = if (newPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
                             IconButton(onClick = { newPasswordVisible = !newPasswordVisible }) {
                                 Icon(
                                     imageVector = if (newPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (newPasswordVisible) "Hide password" else "Show password"
+                                    contentDescription = if (newPasswordVisible) "Hide password" else "Show password",
+                                    tint = UniFind.TextSecondary
                                 )
                             }
-                        }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = UniFind.Primary,
+                            unfocusedBorderColor = UniFind.Outline,
+                            cursorColor = UniFind.Primary
+                        )
                     )
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
@@ -95,20 +145,34 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Confirm New Password") },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(16.dp),
                         visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
                             IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
                                 Icon(
                                     imageVector = if (confirmPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (confirmPasswordVisible) "Hide password" else "Show password"
+                                    contentDescription = if (confirmPasswordVisible) "Hide password" else "Show password",
+                                    tint = UniFind.TextSecondary
                                 )
                             }
-                        }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = UniFind.Primary,
+                            unfocusedBorderColor = UniFind.Outline,
+                            cursorColor = UniFind.Primary
+                        )
                     )
                     changePasswordMessage?.let {
                         Spacer(Modifier.height(8.dp))
-                        Text(it, color = if (it.contains("success", true)) Color(0xFF4CAF50) else Color.Red, fontSize = 12.sp)
+                        Text(
+                            it,
+                            color = if (it.contains("success", ignoreCase = true)) {
+                                UniFind.Primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
                 }
             },
@@ -123,7 +187,7 @@ fun SettingsScreen(
                             changePasswordMessage = "Password must be at least 6 characters."
                             return@TextButton
                         }
-                        
+
                         isChangeLoading = true
                         viewModel.changePassword(newPassword) { success, msg ->
                             isChangeLoading = false
@@ -142,20 +206,26 @@ fun SettingsScreen(
                     enabled = !isChangeLoading && newPassword.isNotBlank() && confirmPassword.isNotBlank()
                 ) {
                     if (isChangeLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = UniFind.Primary
+                        )
                     } else {
-                        Text("UPDATE", fontWeight = FontWeight.Bold)
+                        Text("UPDATE", fontWeight = FontWeight.Bold, color = UniFind.Primary)
                     }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { 
-                    showChangePasswordDialog = false
-                    changePasswordMessage = null
-                    newPassword = ""
-                    confirmPassword = ""
-                }) {
-                    Text("CANCEL")
+                TextButton(
+                    onClick = {
+                        showChangePasswordDialog = false
+                        changePasswordMessage = null
+                        newPassword = ""
+                        confirmPassword = ""
+                    }
+                ) {
+                    Text("CANCEL", color = UniFind.TextSecondary)
                 }
             }
         )
@@ -175,9 +245,14 @@ fun SettingsScreen(
     if (showLanguageDialog) {
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
-            title = { Text("Select Language") },
+            containerColor = UniFind.White,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text("Select Language", style = MaterialTheme.typography.titleMedium, color = UniFind.Text)
+            },
             text = {
-                Column {
+                // 8 rows exceed the dialog height on short portrait screens.
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     languages.forEach { lang ->
                         Row(
                             modifier = Modifier
@@ -199,13 +274,19 @@ fun SettingsScreen(
                                 }
                             )
                             Spacer(Modifier.width(8.dp))
-                            Text(lang)
+                            Text(
+                                lang,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = UniFind.Text
+                            )
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showLanguageDialog = false }) { Text("CANCEL") }
+                TextButton(onClick = { showLanguageDialog = false }) {
+                    Text("CANCEL", color = UniFind.TextSecondary)
+                }
             }
         )
     }
@@ -213,165 +294,333 @@ fun SettingsScreen(
     if (showPrivacyDialog) {
         AlertDialog(
             onDismissRequest = { showPrivacyDialog = false },
-            title = { Text("Privacy Policy") },
-            text = { 
+            containerColor = UniFind.White,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text("Privacy Policy", style = MaterialTheme.typography.titleMedium, color = UniFind.Text)
+            },
+            text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text("Your privacy is important to us. PLMUN Lost & Found collects your name, student ID, and email to facilitate item recovery.")
+                    Text(
+                        "Your privacy is important to us. PLMUN Lost & Found collects your name, student ID, and email to facilitate item recovery.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = UniFind.TextSecondary
+                    )
                     Spacer(Modifier.height(8.dp))
-                    Text("Data is stored securely in Google Firebase and is only used within the app for communication between students.")
+                    Text(
+                        "Data is stored securely in Google Firebase and is only used within the app for communication between students.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = UniFind.TextSecondary
+                    )
                 }
             },
-            confirmButton = { TextButton(onClick = { showPrivacyDialog = false }) { Text("OK") } }
+            confirmButton = {
+                TextButton(onClick = { showPrivacyDialog = false }) {
+                    Text("OK", color = UniFind.Primary)
+                }
+            }
         )
     }
 
     if (showTermsDialog) {
         AlertDialog(
             onDismissRequest = { showTermsDialog = false },
-            title = { Text("Terms of Service") },
+            containerColor = UniFind.White,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text("Terms of Service", style = MaterialTheme.typography.titleMedium, color = UniFind.Text)
+            },
             text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text("1. Be honest: Do not report fake items.")
-                    Text("2. Respect others: Use the chat only for item recovery.")
-                    Text("3. Safety: Meet in public places or the Security Office.")
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        "1. Be honest: Do not report fake items.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = UniFind.TextSecondary
+                    )
+                    Text(
+                        "2. Respect others: Use the chat only for item recovery.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = UniFind.TextSecondary
+                    )
+                    Text(
+                        "3. Safety: Meet in public places or the Security Office.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = UniFind.TextSecondary
+                    )
                 }
             },
-            confirmButton = { TextButton(onClick = { showTermsDialog = false }) { Text("AGREE") } }
+            confirmButton = {
+                TextButton(onClick = { showTermsDialog = false }) {
+                    Text("AGREE", color = UniFind.Primary)
+                }
+            }
         )
     }
 
     if (showHelpDialog) {
         AlertDialog(
             onDismissRequest = { showHelpDialog = false },
-            title = { Text("Help & Support") },
+            containerColor = UniFind.White,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text("Help & Support", style = MaterialTheme.typography.titleMedium, color = UniFind.Text)
+            },
             text = {
                 Column {
-                    Text("Need help? Contact the PLMUN App Support Team.")
+                    Text(
+                        "Need help? Contact the PLMUN App Support Team.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = UniFind.TextSecondary
+                    )
                     Spacer(Modifier.height(8.dp))
-                    Text("Email: support.lostfound@plmun.edu.ph", fontWeight = FontWeight.Bold)
-                    Text("Location: IT Department, 3rd Floor")
+                    Text(
+                        "Email: support.lostfound@plmun.edu.ph",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = UniFind.Text
+                    )
+                    Text(
+                        "Location: IT Department, 3rd Floor",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = UniFind.TextSecondary
+                    )
                 }
             },
-            confirmButton = { TextButton(onClick = { showHelpDialog = false }) { Text("CLOSE") } }
+            confirmButton = {
+                TextButton(onClick = { showHelpDialog = false }) {
+                    Text("CLOSE", color = UniFind.Primary)
+                }
+            }
+        )
+    }
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            containerColor = UniFind.White,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text("Log out", style = MaterialTheme.typography.titleMedium, color = UniFind.Text)
+            },
+            text = {
+                Text(
+                    "Are you sure you want to log out of this device?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = UniFind.TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLogoutDialog = false
+                        viewModel.signOut()
+                        onLogoutClick?.invoke()
+                    }
+                ) {
+                    Text("Log out", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("Cancel", color = UniFind.Primary)
+                }
+            }
+        )
+    }
+
+    if (showDeleteAccountDialog) {
+        val canDelete = onDeleteAccountClick != null
+        AlertDialog(
+            onDismissRequest = { showDeleteAccountDialog = false },
+            containerColor = UniFind.White,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text("Delete account", style = MaterialTheme.typography.titleMedium, color = UniFind.Text)
+            },
+            text = {
+                Text(
+                    if (canDelete) {
+                        "This permanently removes your account and everything you have posted. This action cannot be undone."
+                    } else {
+                        "Account deletion is handled by the PLMUN support team. Send a request to support.lostfound@plmun.edu.ph and we will process it within 3 working days."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = UniFind.TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteAccountDialog = false
+                        if (canDelete) onDeleteAccountClick?.invoke()
+                    }
+                ) {
+                    Text(
+                        if (canDelete) "Delete" else "OK",
+                        color = if (canDelete) MaterialTheme.colorScheme.error else UniFind.Primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAccountDialog = false }) {
+                    Text("Cancel", color = UniFind.TextSecondary)
+                }
+            }
         )
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(UniFind.Background)
     ) {
+
         // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.primary)
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBackClick, modifier = Modifier.size(28.dp)) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onPrimary
-                )
-            }
-            Spacer(modifier = Modifier.width(4.dp))
-            Column {
-                Text(
-                    text = "Settings",
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "App preferences",
-                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
-                    fontSize = 13.sp
-                )
-            }
-        }
+        ScreenHeader(
+            title = "Settings",
+            onBack = onBackClick,
+            subtitle = "App preferences"
+        )
 
         Column(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
                 .padding(horizontal = 20.dp)
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            // Dark Mode — toggle row
-            SettingsToggleRow(
-                icon = Icons.Default.DarkMode,
-                title = "Dark Mode",
-                subtitle = "Switch between light and dark theme",
-                checked = darkMode,
-                onCheckedChange = { 
-                    darkMode = it
-                    viewModel.setDarkMode(it)
-                    onThemeChange(it)
+            // Appearance ---------------------------------------------------
+            SectionHeader(title = "Appearance")
+            Spacer(modifier = Modifier.height(10.dp))
+
+            UniFindCard(cornerRadius = 24.dp) {
+                SettingsToggleRow(
+                    icon = Icons.Outlined.Tune,
+                    title = "Dark Mode",
+                    subtitle = "Switch between light and dark theme",
+                    checked = darkMode,
+                    onCheckedChange = {
+                        darkMode = it
+                        viewModel.setDarkMode(it)
+                        onThemeChange(it)
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Preferences --------------------------------------------------
+            SectionHeader(title = "Preferences")
+            Spacer(modifier = Modifier.height(10.dp))
+
+            UniFindCard(cornerRadius = 24.dp) {
+                Column {
+                    SettingsNavRow(
+                        icon = Icons.AutoMirrored.Outlined.MenuBook,
+                        title = "Language",
+                        subtitle = selectedLanguage,
+                        onClick = { showLanguageDialog = true }
+                    )
+                    HorizontalDivider(color = UniFind.Divider, thickness = 1.dp)
+
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Lock,
+                        title = "Change Password",
+                        subtitle = "Update your account security",
+                        onClick = { showChangePasswordDialog = true }
+                    )
+                    HorizontalDivider(color = UniFind.Divider, thickness = 1.dp)
+
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Shield,
+                        title = "Privacy Policy",
+                        subtitle = "How we handle your data",
+                        onClick = { showPrivacyDialog = true }
+                    )
+                    HorizontalDivider(color = UniFind.Divider, thickness = 1.dp)
+
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Description,
+                        title = "Terms of Service",
+                        subtitle = "Rules for using this app",
+                        onClick = { showTermsDialog = true }
+                    )
                 }
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
+            }
 
-            // Language — navigation row
-            SettingsNavRow(
-                icon = Icons.Default.Language,
-                title = "Language",
-                subtitle = selectedLanguage,
-                onClick = { showLanguageDialog = true }
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
+            Spacer(modifier = Modifier.height(24.dp))
 
-            SettingsNavRow(
-                icon = Icons.Default.Lock,
-                title = "Change Password",
-                subtitle = "Update your account security",
-                onClick = { showChangePasswordDialog = true }
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
+            // Help ---------------------------------------------------------
+            SectionHeader(title = "Help")
+            Spacer(modifier = Modifier.height(10.dp))
 
-            SettingsNavRow(
-                icon = Icons.Default.Lock,
-                title = "Privacy Policy",
-                subtitle = "How we handle your data",
-                onClick = { showPrivacyDialog = true }
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
+            UniFindCard(cornerRadius = 24.dp) {
+                SettingsNavRow(
+                    icon = Icons.AutoMirrored.Outlined.Help,
+                    title = "Help & Support",
+                    subtitle = "Get help or send feedback",
+                    onClick = { showHelpDialog = true }
+                )
+            }
 
-            SettingsNavRow(
-                icon = Icons.Default.Description,
-                title = "Terms of Service",
-                subtitle = "Rules for using this app",
-                onClick = { showTermsDialog = true }
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
+            Spacer(modifier = Modifier.height(24.dp))
 
-            SettingsNavRow(
-                icon = Icons.AutoMirrored.Filled.HelpOutline,
-                title = "Help & Support",
-                subtitle = "Get help or send feedback",
-                onClick = { showHelpDialog = true }
-            )
+            // Account (destructive actions) --------------------------------
+            SectionHeader(title = "Account")
+            Spacer(modifier = Modifier.height(10.dp))
+
+            UniFindCard(cornerRadius = 24.dp) {
+                Column {
+                    SettingsNavRow(
+                        icon = Icons.AutoMirrored.Filled.Logout,
+                        title = "Log out",
+                        subtitle = "Sign out of this device",
+                        onClick = { showLogoutDialog = true },
+                        iconTint = MaterialTheme.colorScheme.error,
+                        tileColor = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
+                        titleColor = MaterialTheme.colorScheme.error
+                    )
+                    HorizontalDivider(color = UniFind.Divider, thickness = 1.dp)
+
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Delete,
+                        title = "Delete account",
+                        subtitle = "Permanently remove your account",
+                        onClick = { showDeleteAccountDialog = true },
+                        iconTint = MaterialTheme.colorScheme.error,
+                        tileColor = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
+                        titleColor = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
 
+/** Soft icon tile used by the settings rows. */
 @Composable
-private fun SettingsIconBox(icon: ImageVector) {
-    Box(
-        modifier = Modifier
-            .size(42.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.primary),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size(20.dp)
-        )
-    }
+private fun SettingsIconBox(
+    icon: ImageVector,
+    containerColor: Color = TileSoftSage,
+    iconTint: Color = UniFind.Primary
+) {
+    IconTile(
+        icon = icon,
+        size = 44.dp,
+        cornerRadius = 14.dp,
+        containerColor = containerColor,
+        iconTint = iconTint,
+        iconSize = 21.dp
+    )
 }
 
 @Composable
@@ -385,21 +634,33 @@ private fun SettingsToggleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         SettingsIconBox(icon)
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-            Text(text = subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = UniFind.Text
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = UniFind.TextSecondary
+            )
         }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                checkedTrackColor = MaterialTheme.colorScheme.primary
+                checkedThumbColor = UniFind.OnPrimary,
+                checkedTrackColor = UniFind.Primary,
+                checkedBorderColor = UniFind.Primary,
+                uncheckedThumbColor = UniFind.White,
+                uncheckedTrackColor = UniFind.SurfaceAlt,
+                uncheckedBorderColor = UniFind.Outline
             )
         )
     }
@@ -410,26 +671,37 @@ private fun SettingsNavRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    iconTint: Color = UniFind.Primary,
+    tileColor: Color = TileSoftSage,
+    titleColor: Color = UniFind.Text
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        SettingsIconBox(icon)
+        SettingsIconBox(icon, containerColor = tileColor, iconTint = iconTint)
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-            Text(text = subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = titleColor
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = UniFind.TextSecondary
+            )
         }
         Icon(
-            imageVector = Icons.Default.ChevronRight,
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
+            tint = UniFind.TextTertiary,
+            modifier = Modifier.size(22.dp)
         )
     }
 }
-

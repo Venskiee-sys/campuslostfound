@@ -1,56 +1,61 @@
 package com.example.campuslostfound
 
 import com.example.campuslostfound.model.Item
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
-import kotlinx.coroutines.channels.awaitClose
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.tasks.await
 
+/**
+ * Items feed on Supabase Postgres (was Firestore collection "items").
+ * Reads are live flows kept up to date by Supabase Realtime.
+ */
 class ItemRepository {
-    private val db = FirebaseFirestore.getInstance()
-    private val itemsCollection = db.collection("items")
 
-    fun getItems(type: String? = null): Flow<List<Item>> = callbackFlow {
-        var query = itemsCollection.whereEqualTo("status", "Open")
-        
-        if (type != null) {
-            query = query.whereEqualTo("type", type)
-        }
+    private val supabase get() = SupabaseProvider.client
 
-        val listener = query.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                // If it fails (e.g. missing index), send an empty list instead of crashing
-                trySend(emptyList())
-                return@addSnapshotListener
-            }
-            val items = snapshot?.toObjects(Item::class.java) ?: emptyList()
-            trySend(items)
-        }
-        awaitClose { listener.remove() }
-    }
-
-    fun getMyReports(userId: String): Flow<List<Item>> = callbackFlow {
-        val listener = itemsCollection.whereEqualTo("reportedBy", userId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    trySend(emptyList())
-                    return@addSnapshotListener
+    fun getItems(type: String? = null): Flow<List<Item>> =
+        SupabaseProvider.liveTableFlow("items") {
+            supabase.postgrest["items"].select {
+                filter {
+                    eq("status", "Open")
+                    if (type != null) eq("type", type)
                 }
-                val items = snapshot?.toObjects(Item::class.java) ?: emptyList()
-                // Sort manually in Kotlin
-                val sortedItems = items.sortedByDescending { it.timestamp }
-                trySend(sortedItems)
-            }
-        awaitClose { listener.remove() }
+                order("created_at", Order.DESCENDING)
+            }.decodeList<Item>()
+        }
+
+    fun getMyReports(userId: String): Flow<List<Item>> =
+        SupabaseProvider.liveTableFlow("items") {
+            supabase.postgrest["items"].select {
+                filter {
+                    eq("reported_by", userId)
+                }
+                order("created_at", Order.DESCENDING)
+            }.decodeList<Item>()
+        }
+
+    suspend fun getItem(itemId: String): Result<Item?> {
+        return try {
+            Result.success(
+                supabase.postgrest["items"].select {
+                    filter {
+                        eq("id", itemId)
+                    }
+                    limit(1)
+                }.decodeSingleOrNull<Item>()
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     suspend fun reportItem(item: Item): Result<Unit> {
         return try {
-            val docRef = itemsCollection.document()
-            val newItem = item.copy(id = docRef.id)
-            docRef.set(newItem).await()
+            // id stays "" (its default) so it isn't serialized and the database
+            // generates a uuid (same role as Firestore's auto doc id).
+            supabase.postgrest["items"].insert(item) {
+                select()
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -59,13 +64,13 @@ class ItemRepository {
 
     suspend fun resolveItem(itemId: String): Result<Unit> {
         return try {
-            val itemDoc = itemsCollection.document(itemId).get().await()
-            val item = itemDoc.toObject(Item::class.java)
-            
-            itemsCollection.document(itemId).update("status", "Resolved").await()
-            
-            // Send notification to the owner/reporter if they are not the one resolving (admins etc, but usually same user)
-            // For now, let's just create a system log notification
+            supabase.postgrest["items"].update({
+                set("status", "Resolved")
+            }) {
+                filter {
+                    eq("id", itemId)
+                }
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

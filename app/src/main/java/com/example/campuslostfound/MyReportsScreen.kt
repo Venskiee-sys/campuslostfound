@@ -1,26 +1,45 @@
 package com.example.campuslostfound
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.outlined.Assignment
+import androidx.compose.material.icons.outlined.DateRange
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.automirrored.outlined.Help
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.material3.MaterialTheme
 import com.example.campuslostfound.model.Item
+import com.example.campuslostfound.ui.components.*
+import com.example.campuslostfound.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,10 +47,18 @@ fun MyReportsScreen(
     authViewModel: AuthViewModel,
     itemViewModel: ItemViewModel,
     onBackClick: () -> Unit,
-    onReportClick: (String) -> Unit
+    onReportClick: (String) -> Unit,
+    onReportLostClick: () -> Unit = {},
+    onReportFoundClick: () -> Unit = {}
 ) {
     val user = authViewModel.userData.value
+    // StateFlow, not compose State: reading .value directly in composition
+    // would not subscribe to it (and lint errors on it). Collect it instead so
+    // the sign-in check reacts when the session arrives.
+    val isAuthenticated by authViewModel.isUserAuthenticated.collectAsState()
     var showResolveDialog by remember { mutableStateOf<String?>(null) }
+    var showReportSheet by remember { mutableStateOf(false) }
+    var selectedFilter by remember { mutableStateOf("All") }
 
     LaunchedEffect(user) {
         user?.uid?.let { uid ->
@@ -41,129 +68,330 @@ fun MyReportsScreen(
 
     val myReports by itemViewModel.myReports.collectAsState()
 
+    val filteredReports = when (selectedFilter) {
+        "Lost" -> myReports.filter { it.type.equals("Lost", ignoreCase = true) }
+        "Found" -> myReports.filter { it.type.equals("Found", ignoreCase = true) }
+        "Resolved" -> myReports.filter { it.status.equals("Resolved", ignoreCase = true) }
+        else -> myReports
+    }
+
+    val filterBadges = mapOf(
+        "All" to myReports.size,
+        "Lost" to myReports.count { it.type.equals("Lost", ignoreCase = true) },
+        "Found" to myReports.count { it.type.equals("Found", ignoreCase = true) },
+        "Resolved" to myReports.count { it.status.equals("Resolved", ignoreCase = true) }
+    )
+
+    // Resolve confirmation dialog
     if (showResolveDialog != null) {
         AlertDialog(
             onDismissRequest = { showResolveDialog = null },
-            title = { Text("Mark as Resolved") },
-            text = { Text("Has this item been returned? It will no longer be visible to other users.") },
+            containerColor = UniFind.White,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = "Mark as Resolved",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = UniFind.Text
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Has this item been returned? It will no longer be visible to other users.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = UniFind.TextSecondary
+                    )
+                    itemViewModel.errorMessage.value?.let { error ->
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(
+                    enabled = !itemViewModel.isLoading.value,
                     onClick = {
                         showResolveDialog?.let { id ->
-                            itemViewModel.resolveItem(id) {
-                                // Successfully resolved
-                            }
+                            // Close only after the update succeeds, otherwise the
+                            // item silently stays "Open" with no explanation.
+                            itemViewModel.resolveItem(
+                                itemId = id,
+                                onSuccess = { showResolveDialog = null }
+                            )
                         }
-                        showResolveDialog = null
                     }
                 ) {
-                    Text("YES, RESOLVED", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "YES, RESOLVED",
+                        color = UniFind.Primary,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelLarge
+                    )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showResolveDialog = null }) {
-                    Text("CANCEL")
+                    Text(
+                        text = "CANCEL",
+                        color = UniFind.TextSecondary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
                 }
             }
         )
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "My Reports",
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "View your reported items",
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
-                            fontSize = 13.sp
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
-            )
-        }
-    ) { paddingValues ->
-        if (user == null) {
-            Box(Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else if (myReports.isEmpty()) {
+    // Report picker — "I lost something" / "I found something"
+    if (showReportSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showReportSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = UniFind.White
+        ) {
             Column(
-                modifier = Modifier.fillMaxSize().padding(paddingValues).padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 32.dp)
             ) {
-                Icon(Icons.Default.Category, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.LightGray)
+                Text(
+                    text = "Create a report",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = UniFind.Text
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "What would you like to post?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = UniFind.TextSecondary
+                )
                 Spacer(Modifier.height(16.dp))
-                Text("No reports found", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                Text("Your reported items will appear here.", color = Color.Gray)
+                ReportOptionRow(
+                    icon = Icons.AutoMirrored.Outlined.Help,
+                    iconBackground = UniFind.LostBackground,
+                    iconTint = UniFind.LostText,
+                    title = "I lost something",
+                    message = "Post an item that is missing",
+                    onClick = {
+                        showReportSheet = false
+                        onReportLostClick()
+                    }
+                )
+                Spacer(Modifier.height(12.dp))
+                ReportOptionRow(
+                    icon = Icons.Outlined.Inventory2,
+                    iconBackground = UniFind.FoundBackground,
+                    iconTint = UniFind.FoundText,
+                    title = "I found something",
+                    message = "Post an item you found on campus",
+                    onClick = {
+                        showReportSheet = false
+                        onReportFoundClick()
+                    }
+                )
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(UniFind.Background)
+    ) {
+        ScreenHeader(
+            title = "My Reports",
+            onBack = onBackClick,
+            subtitle = "Track your lost and found reports",
+            actions = {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(UniFind.Primary)
+                        .clickable { showReportSheet = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Report an item",
+                        tint = UniFind.OnPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        )
+
+        if (user == null) {
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isAuthenticated) {
+                    CircularProgressIndicator(color = UniFind.Primary)
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Please sign in to see your reports.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = UniFind.TextSecondary
+                        )
+                    }
+                }
             }
         } else {
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(paddingValues)
-                    .padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxSize().navigationBarsPadding(),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 8.dp,
+                    bottom = 28.dp
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Your Reports",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Text(
-                        text = "Items you have reported as lost or found.",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "${myReports.size} report(s)",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    FilterChipRow(
+                        options = listOf("All", "Lost", "Found", "Resolved"),
+                        selected = selectedFilter,
+                        onSelect = { selectedFilter = it },
+                        badges = filterBadges
                     )
                 }
 
-                items(myReports) { report ->
-                    MyReportCard(
-                        report = report,
-                        onClick = { onReportClick(report.id) },
-                        onResolveClick = { showResolveDialog = report.id }
+                item {
+                    Text(
+                        text = if (filteredReports.size == 1) "1 report"
+                        else "${filteredReports.size} reports",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = UniFind.TextSecondary
                     )
                 }
 
-                item { Spacer(modifier = Modifier.height(20.dp)) }
+                if (filteredReports.isEmpty()) {
+                    item {
+                        EmptyState(
+                            icon = Icons.AutoMirrored.Outlined.Assignment,
+                            title = "No reports yet",
+                            message = when (selectedFilter) {
+                                "All" -> "Your reported items will appear here."
+                                "Lost" -> "You have not reported any lost items yet."
+                                "Found" -> "You have not reported any found items yet."
+                                else -> "Reports you mark as Resolved will appear here."
+                            }
+                        )
+                    }
+                } else {
+                    items(filteredReports) { report ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ItemRowCard(
+                                name = report.name,
+                                type = report.type,
+                                location = report.location,
+                                date = report.date,
+                                category = report.category,
+                                onClick = { onReportClick(report.id) },
+                                modifier = Modifier.weight(1f),
+                                statusLabel = reportStatusPill(report.status)
+                            )
+                            if (report.status == "Open") {
+                                Spacer(Modifier.width(10.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .clip(CircleShape)
+                                        .background(UniFind.SurfaceAlt)
+                                        .clickable {
+                                            itemViewModel.clearError()
+                                            showResolveDialog = report.id
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.CheckCircle,
+                                        contentDescription = "Mark as resolved",
+                                        tint = UniFind.Primary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item { Spacer(Modifier.height(8.dp)) }
             }
         }
     }
 }
 
+/**
+ * Maps an item status onto one of the UniFind status pill labels
+ * (Searching / Possible match / Claimed / Returned / Resolved / …).
+ */
+private fun reportStatusPill(status: String): String = when (status.trim().lowercase()) {
+    "", "open" -> "Searching"
+    "resolved" -> "Resolved"
+    "closed" -> "Closed"
+    else -> status.trim()
+}
 
+/** One tappable option inside the report picker bottom sheet. */
+@Composable
+private fun ReportOptionRow(
+    icon: ImageVector,
+    iconBackground: androidx.compose.ui.graphics.Color,
+    iconTint: androidx.compose.ui.graphics.Color,
+    title: String,
+    message: String,
+    onClick: () -> Unit
+) {
+    UniFindCard(onClick = onClick, containerColor = UniFind.SurfaceAlt) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconTile(
+                icon = icon,
+                size = 46.dp,
+                cornerRadius = 14.dp,
+                containerColor = iconBackground,
+                iconTint = iconTint,
+                iconSize = 24.dp
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = UniFind.Text
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = UniFind.TextSecondary
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = UniFind.TextTertiary,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
 
-// MY REPORT CARD
-
+// ---------------------------------------------------------------------------
+// MY REPORT CARD — kept for compatibility; the list uses ItemRowCard
+// ---------------------------------------------------------------------------
 
 @Composable
 fun MyReportCard(
@@ -171,167 +399,82 @@ fun MyReportCard(
     onClick: () -> Unit,
     onResolveClick: () -> Unit
 ) {
-    val backgroundColor = if (report.type == "Lost") Color(0xFFFFEBEE) else Color(0xFFE3F2FD)
-    val contentColor = if (report.type == "Lost") Color(0xFFB71C1C) else Color(0xFF0D47A1)
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = backgroundColor
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
-        onClick = onClick
-    ) {
+    UniFindCard(onClick = onClick) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(14.dp)
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
         ) {
-            // ITEM TOP
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.5f)),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Category,
-                        contentDescription = "Item",
-                        tint = contentColor,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.size(14.dp))
-
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CategoryIconTile(
+                    category = report.category,
+                    size = 54.dp,
+                    cornerRadius = 16.dp
+                )
+                Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = report.name,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
+                        style = MaterialTheme.typography.titleSmall,
+                        color = UniFind.Text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         text = report.category,
-                        fontSize = 13.sp,
-                        color = contentColor,
-                        fontWeight = FontWeight.Medium
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = report.description,
-                        fontSize = 13.sp,
-                        color = Color.DarkGray
+                        style = MaterialTheme.typography.labelMedium,
+                        color = UniFind.TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+                Spacer(Modifier.width(10.dp))
+                StatusTag(type = report.type)
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // LOCATION + DATE
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = "Location",
-                    tint = contentColor,
-                    modifier = Modifier.size(18.dp)
-                )
+            Text(
+                text = report.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = UniFind.TextSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
 
-                Spacer(modifier = Modifier.size(5.dp))
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(color = UniFind.Divider)
+            Spacer(Modifier.height(4.dp))
 
-                Text(
-                    text = report.location,
-                    fontSize = 13.sp,
-                    color = Color.Black
-                )
+            InfoRow(
+                icon = Icons.Outlined.LocationOn,
+                label = "Location",
+                value = report.location
+            )
+            InfoRow(
+                icon = Icons.Outlined.DateRange,
+                label = "Date",
+                value = report.date
+            )
 
-                Spacer(modifier = Modifier.weight(1f))
+            Spacer(Modifier.height(8.dp))
 
-                Icon(
-                    imageVector = Icons.Default.CalendarToday,
-                    contentDescription = "Date",
-                    tint = contentColor,
-                    modifier = Modifier.size(16.dp)
-                )
-
-                Spacer(modifier = Modifier.size(5.dp))
-
-                Text(
-                    text = report.date,
-                    fontSize = 12.sp,
-                    color = Color.DarkGray
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // STATUS
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Type Badge (Lost/Found)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusPill(reportStatusPill(report.status))
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onClick) {
                     Text(
-                        text = report.type,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        modifier = Modifier
-                            .background(color = contentColor, shape = RoundedCornerShape(8.dp))
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                        text = "Details",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = UniFind.Secondary
                     )
-
-                    Spacer(Modifier.width(8.dp))
-
-                    // RESOLVED Badge
-                    if (report.status == "Resolved") {
-                        Text(
-                            text = "RESOLVED",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color.White,
-                            modifier = Modifier
-                                .background(color = Color(0xFF4CAF50), shape = RoundedCornerShape(8.dp))
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
-                    }
                 }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onClick) {
+                if (report.status == "Open") {
+                    TextButton(onClick = onResolveClick) {
                         Text(
-                            text = "DETAILS",
-                            color = contentColor,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            text = "Mark resolved",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = UniFind.Primary
                         )
-                    }
-
-                    if (report.status == "Open") {
-                        Button(
-                            onClick = onResolveClick,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            modifier = Modifier.height(36.dp)
-                        ) {
-                            Text("RESOLVE", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
                     }
                 }
             }

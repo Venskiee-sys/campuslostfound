@@ -3,69 +3,71 @@ package com.example.campuslostfound
 import com.example.campuslostfound.model.Chat
 import com.example.campuslostfound.model.Message
 import com.example.campuslostfound.model.Notification
-import com.google.firebase.Timestamp
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
-import kotlinx.coroutines.channels.awaitClose
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.tasks.await
 
+/**
+ * Chats + messages on Supabase Postgres (was Firestore "chats" with a
+ * "messages" subcollection — now a flat messages table filtered by chat_id).
+ * Reads are live flows kept up to date by Supabase Realtime.
+ */
 class ChatRepository {
-    private val db = FirebaseFirestore.getInstance()
-    private val chatsCollection = db.collection("chats")
+
+    private val supabase get() = SupabaseProvider.client
     private val notifRepo = NotificationRepository()
 
-    fun getChats(userId: String): Flow<List<Chat>> = callbackFlow {
-        val listener = chatsCollection.whereArrayContains("participantIds", userId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    trySend(emptyList())
-                    return@addSnapshotListener
+    fun getChats(userId: String): Flow<List<Chat>> =
+        SupabaseProvider.liveTableFlow("chats") {
+            supabase.postgrest["chats"].select {
+                filter {
+                    contains("participant_ids", listOf(userId))
                 }
-                val chats = snapshot?.toObjects(Chat::class.java) ?: emptyList()
-                // Sort manually in Kotlin to avoid needing a Firebase Index immediately
-                val sortedChats = chats.sortedByDescending { it.lastTimestamp }
-                trySend(sortedChats)
-            }
-        awaitClose { listener.remove() }
-    }
+                order("last_timestamp", Order.DESCENDING)
+            }.decodeList<Chat>()
+        }
 
-    fun getMessages(chatId: String): Flow<List<Message>> = callbackFlow {
-        val listener = chatsCollection.document(chatId).collection("messages")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    trySend(emptyList())
-                    return@addSnapshotListener
+    fun getMessages(chatId: String): Flow<List<Message>> =
+        SupabaseProvider.liveTableFlow("messages") {
+            supabase.postgrest["messages"].select {
+                filter {
+                    eq("chat_id", chatId)
                 }
-                val messages = snapshot?.toObjects(Message::class.java) ?: emptyList()
-                val sortedMessages = messages.sortedBy { it.timestamp }
-                trySend(sortedMessages)
-            }
-        awaitClose { listener.remove() }
-    }
+                order("created_at", Order.ASCENDING)
+            }.decodeList<Message>()
+        }
 
     suspend fun sendMessage(chatId: String, senderId: String, content: String) {
-        val chatDoc = chatsCollection.document(chatId).get().await()
-        val chat = chatDoc.toObject(Chat::class.java)
-        val otherId = chat?.participantIds?.find { it != senderId } ?: ""
-        val senderName = chat?.participantNames?.get(senderId) ?: "Someone"
+        val chat = supabase.postgrest["chats"].select {
+            filter {
+                eq("id", chatId)
+            }
+            limit(1)
+        }.decodeSingleOrNull<Chat>()
+            // Fail loudly: writing the message without the chat row would skip the
+            // "last message" update and the recipient's notification.
+            ?: throw IllegalStateException("This conversation no longer exists.")
 
-        val messageDoc = chatsCollection.document(chatId).collection("messages").document()
+        val otherId = chat.participantIds.firstOrNull { it != senderId } ?: ""
+        val senderName = chat.participantNames[senderId] ?: "Someone"
+
         val message = Message(
-            id = messageDoc.id,
             senderId = senderId,
             content = content,
-            timestamp = Timestamp.now()
+            chatId = chatId,
+            timestamp = System.currentTimeMillis()
         )
 
-        db.runBatch { batch ->
-            batch.set(messageDoc, message)
-            batch.update(chatsCollection.document(chatId), 
-                "lastMessage", content,
-                "lastTimestamp", Timestamp.now()
-            )
-        }.await()
+        supabase.postgrest["messages"].insert(message)
+
+        supabase.postgrest["chats"].update({
+            set("last_message", content)
+            set("last_timestamp", System.currentTimeMillis())
+        }) {
+            filter {
+                eq("id", chatId)
+            }
+        }
 
         // Create Notification
         notifRepo.sendNotification(
@@ -80,29 +82,35 @@ class ChatRepository {
         )
     }
 
-    suspend fun getOrCreateChat(myId: String, myName: String, otherId: String, otherName: String): String {
-        val chatQuery = chatsCollection
-            .whereArrayContains("participantIds", myId)
-            .get().await()
+    suspend fun getOrCreateChat(
+        myId: String,
+        myName: String,
+        otherId: String,
+        otherName: String
+    ): String {
+        val myChats = supabase.postgrest["chats"].select {
+            filter {
+                contains("participant_ids", listOf(myId))
+            }
+        }.decodeList<Chat>()
 
-        val existingChat = chatQuery.documents.find { doc ->
-            val participants = doc.get("participantIds") as? List<*>
-            participants?.contains(otherId) == true
+        val existingChat = myChats.find { chat ->
+            chat.participantIds.contains(otherId)
         }
-
         if (existingChat != null) {
             return existingChat.id
         }
 
-        val newChatDoc = chatsCollection.document()
         val newChat = Chat(
-            id = newChatDoc.id,
             participantIds = listOf(myId, otherId),
             participantNames = mapOf(myId to myName, otherId to otherName),
             lastMessage = "No messages yet",
-            lastTimestamp = Timestamp.now()
+            lastTimestamp = System.currentTimeMillis()
         )
-        newChatDoc.set(newChat).await()
-        return newChatDoc.id
+        // id stays "" → omitted from the insert → the database generates a uuid.
+        val inserted = supabase.postgrest["chats"].insert(newChat) {
+            select()
+        }.decodeSingle<Chat>()
+        return inserted.id
     }
 }

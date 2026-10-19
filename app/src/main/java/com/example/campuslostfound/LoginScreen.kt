@@ -5,35 +5,40 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,22 +50,29 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.campuslostfound.ui.theme.PLMUNGreen
+import com.example.campuslostfound.ui.components.*
+import com.example.campuslostfound.ui.theme.*
 
+// ---------------------------------------------------------------------------
+// LOGIN SCREEN
+// Dark green header (logo, "Welcome back", subtitle) with a white rounded
+// card overlapping it: email + password fields, remember me / forgot password,
+// Sign In, "or" divider, Continue with Google, Sign Up link.
+// ---------------------------------------------------------------------------
 @Composable
 fun LoginScreen(
     viewModel: AuthViewModel,
     onLoginClick: () -> Unit = {},
-    onCreateAccountClick: () -> Unit = {}
+    onCreateAccountClick: () -> Unit = {},
+    onGoogleSignInClick: (() -> Unit)? = null
 ) {
 
 
@@ -84,8 +96,13 @@ fun LoginScreen(
         mutableStateOf<String?>(null)
     }
 
+    var infoMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
     val isLoading = viewModel.isLoading.value
     val firebaseError = viewModel.errorMessage.value
+    val landscape = rememberIsLandscape()
 
     var showForgotDialog by remember { mutableStateOf(false) }
     var forgotEmail by remember { mutableStateOf("") }
@@ -95,22 +112,54 @@ fun LoginScreen(
     if (showForgotDialog) {
         AlertDialog(
             onDismissRequest = { showForgotDialog = false },
-            title = { Text("Reset Password") },
+            containerColor = UniFind.White,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    "Reset Password",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = UniFind.Text
+                )
+            },
             text = {
                 Column {
-                    Text("Enter your email address and we'll send you a link to reset your password.")
+                    Text(
+                        "Enter your email address and we'll send you a link to reset your password.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = UniFind.TextSecondary
+                    )
                     Spacer(Modifier.height(16.dp))
                     OutlinedTextField(
                         value = forgotEmail,
                         onValueChange = { forgotEmail = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Email Address") },
+                        label = {
+                            Text(
+                                "Email Address",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Email,
+                                contentDescription = "Email"
+                            )
+                        },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(16.dp),
+                        colors = loginFieldColors()
                     )
                     forgotMessage?.let {
                         Spacer(Modifier.height(8.dp))
-                        Text(it, color = if (it.contains("sent", true)) Color(0xFF4CAF50) else Color.Red, fontSize = 12.sp)
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (it.contains("sent", true)) {
+                                UniFind.Primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            }
+                        )
                     }
                 }
             },
@@ -121,27 +170,36 @@ fun LoginScreen(
                         viewModel.resetPassword(forgotEmail) { success, msg ->
                             isForgotLoading = false
                             forgotMessage = msg
-                            if (success) {
-                                // Close after a delay? Or just let user close it
-                            }
                         }
                     },
                     enabled = !isForgotLoading && forgotEmail.isNotBlank()
                 ) {
                     if (isForgotLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = UniFind.Primary
+                        )
                     } else {
-                        Text("SEND RESET LINK", fontWeight = FontWeight.Bold)
+                        Text(
+                            "SEND RESET LINK",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = UniFind.Primary
+                        )
                     }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { 
+                TextButton(onClick = {
                     showForgotDialog = false
                     forgotMessage = null
                     forgotEmail = ""
                 }) {
-                    Text("CANCEL")
+                    Text(
+                        "CANCEL",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = UniFind.TextSecondary
+                    )
                 }
             }
         )
@@ -163,428 +221,426 @@ fun LoginScreen(
         modifier = Modifier
             .fillMaxSize()
             .imePadding(), // Pushes everything up
-        color = MaterialTheme.colorScheme.background
+        color = UniFind.Background
     ) {
 
-        Box(
-            modifier = Modifier.fillMaxSize()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                // Bottom inset on the viewport (not the Surface) so the green
+                // footer scrolls clear of the gesture bar without shrinking
+                // the surface background behind it.
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
+            // ---- Dark green header ----------------------------------------
+            GreenHeader(modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp)) {
 
+                Row(verticalAlignment = Alignment.CenterVertically) {
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(
-                        rememberScrollState()
-                    )
-                    .padding(
-                        start = 24.dp,
-                        end = 24.dp,
-                        top = 35.dp,
-                        bottom = 20.dp
-                    ),
+                    // UniFind logo in a white rounded square
+                    Box(
+                        modifier = Modifier
+                            .size(if (landscape) 48.dp else 64.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(UniFind.White),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.plmunlogo),
+                            contentDescription = "UniFind logo",
+                            modifier = Modifier.size(if (landscape) 34.dp else 46.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
 
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+                    Spacer(modifier = Modifier.width(14.dp))
 
+                    Column {
+                        Text(
+                            text = "UniFind",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = UniFind.OnPrimary
+                        )
+                        Text(
+                            text = "Campus Lost & Found",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = UniFind.OnPrimary.copy(alpha = 0.85f)
+                        )
+                    }
+                }
 
-
-                Image(
-                    painter = painterResource(
-                        id = R.drawable.plmunlogo
-                    ),
-
-                    contentDescription = "PLMUN Logo",
-
-                    modifier = Modifier.size(190.dp),
-
-                    contentScale = ContentScale.Fit
-                )
-
-
-                Spacer(
-                    modifier = Modifier.height(18.dp)
-                )
-
+                Spacer(modifier = Modifier.height(if (landscape) 12.dp else 28.dp))
 
                 Text(
-                    text = "Campus Lost & Found",
-
-                    color = PLMUNGreen,
-
-                    fontSize = 28.sp,
-
-                    fontWeight = FontWeight.Bold
+                    text = "Welcome back",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = UniFind.OnPrimary
                 )
 
-
-                Spacer(
-                    modifier = Modifier.height(8.dp)
-                )
-
-
+                Spacer(modifier = Modifier.height(if (landscape) 4.dp else 6.dp))
 
                 Text(
                     text = "Find what you've lost. Help return what you've found.",
-
-                    color = Color.Gray,
-
-                    fontSize = 14.sp
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = UniFind.OnPrimary.copy(alpha = 0.85f)
                 )
 
+                // Room for the white card to overlap the header
+                Spacer(modifier = Modifier.height(if (landscape) 20.dp else 36.dp))
+            }
 
-                Spacer(
-                    modifier = Modifier.height(40.dp)
-                )
-
-
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-
-                    verticalAlignment = Alignment.CenterVertically
+            // ---- White card overlapping the header ------------------------
+            UniFindCard(
+                modifier = Modifier
+                    .padding(horizontal = if (landscape) 48.dp else 16.dp)
+                    .offset(y = if (landscape) (-16).dp else (-40).dp)
+                    .widthIn(max = 560.dp),
+                cornerRadius = 28.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(
+                        start = 22.dp,
+                        end = 22.dp,
+                        top = 26.dp,
+                        bottom = 24.dp
+                    )
                 ) {
 
-                    Icon(
-                        imageVector = Icons.Default.Person,
-
-                        contentDescription = "Login",
-
-                        tint = PLMUNGreen,
-
-                        modifier = Modifier.size(26.dp)
+                    UniFindTextField(
+                        value = studentId,
+                        onValueChange = {
+                            studentId = it
+                            localErrorMessage = null
+                        },
+                        label = "SCHOOL EMAIL",
+                        placeholder = "name@school.edu.ph",
+                        leadingIcon = Icons.Outlined.Email,
+                        leadingIconDescription = "Email"
                     )
+
 
                     Spacer(
-                        modifier = Modifier.width(10.dp)
+                        modifier = Modifier.height(14.dp)
                     )
 
-                    Text(
-                        text = "Login to your account",
 
-                        color = PLMUNGreen,
-
-                        fontSize = 20.sp,
-
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-
-                Spacer(
-                    modifier = Modifier.height(18.dp)
-                )
-
-
-                OutlinedTextField(
-
-                    value = studentId,
-
-                    onValueChange = {
-                        studentId = it
-                    },
-
-                    modifier = Modifier.fillMaxWidth(),
-
-                    singleLine = true,
-
-                    label = {
-                        Text("Email or Student ID")
-                    },
-
-                    leadingIcon = {
-
-                        Icon(
-                            imageVector = Icons.Default.Email,
-
-                            contentDescription = "Email",
-
-                            tint = PLMUNGreen
-                        )
-                    },
-
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-
-                Spacer(
-                    modifier = Modifier.height(14.dp)
-                )
-
-
-                OutlinedTextField(
-
-                    value = password,
-
-                    onValueChange = {
-                        password = it
-                    },
-
-                    modifier = Modifier.fillMaxWidth(),
-
-                    singleLine = true,
-
-                    label = {
-                        Text("Password")
-                    },
-
-                    leadingIcon = {
-
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-
-                            contentDescription = "Password",
-
-                            tint = PLMUNGreen
-                        )
-                    },
-
-                    trailingIcon = {
-
-                        IconButton(
-                            onClick = {
-                                passwordVisible = !passwordVisible
-                            }
-                        ) {
-
-                            Icon(
-
-                                imageVector =
-                                    if (passwordVisible) {
-                                        Icons.Default.VisibilityOff
-                                    } else {
-                                        Icons.Default.Visibility
-                                    },
-
-                                contentDescription =
-                                    if (passwordVisible) {
-                                        "Hide password"
-                                    } else {
-                                        "Show password"
-                                    }
-                            )
-                        }
-                    },
-
-                    visualTransformation =
-                        if (passwordVisible) {
-                            VisualTransformation.None
-                        } else {
-                            PasswordVisualTransformation()
+                    UniFindTextField(
+                        value = password,
+                        onValueChange = {
+                            password = it
+                            localErrorMessage = null
                         },
+                        label = "PASSWORD",
+                        placeholder = "Enter your password",
+                        leadingIcon = Icons.Outlined.Lock,
+                        leadingIconDescription = "Password",
+                        trailingIcon = {
+                            IconButton(
+                                onClick = {
+                                    passwordVisible = !passwordVisible
+                                }
+                            ) {
+                                Icon(
+                                    imageVector =
+                                        if (passwordVisible) {
+                                            Icons.Outlined.VisibilityOff
+                                        } else {
+                                            Icons.Outlined.Visibility
+                                        },
+                                    contentDescription =
+                                        if (passwordVisible) {
+                                            "Hide password"
+                                        } else {
+                                            "Show password"
+                                        },
+                                    tint = UniFind.TextSecondary
+                                )
+                            }
+                        },
+                        visualTransformation =
+                            if (passwordVisible) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            }
+                    )
 
-                    shape = RoundedCornerShape(12.dp)
-                )
+
+                    Spacer(modifier = Modifier.height(4.dp))
 
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    // The two actions share one row on wider screens and stack on
+                    // narrow ones so "Forgot password?" never wraps or clips.
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val rememberRow = @Composable {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = rememberMe,
+                                    onCheckedChange = { isChecked ->
+                                        rememberMe = isChecked
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = UniFind.Primary
+                                    )
+                                )
+                                Text(
+                                    text = "Remember me",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = UniFind.Text,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                        val forgotButton = @Composable {
+                            TextButton(onClick = { showForgotDialog = true }) {
+                                Text(
+                                    text = "Forgot password?",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = UniFind.Primary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
 
-                    verticalAlignment = Alignment.CenterVertically,
-
-                    horizontalArrangement =
-                        Arrangement.SpaceBetween
-                ) {
-
-                    Row(
-                        verticalAlignment =
-                            Alignment.CenterVertically
-                    ) {
-
-                        Checkbox(
-
-                            checked = rememberMe,
-
-                            onCheckedChange = { isChecked ->
-                                rememberMe = isChecked
-                                if (isChecked) {
-                                    // Auto-fill when checked
-                                    viewModel.getSavedCredentials()?.let { (email, pass) ->
-                                        studentId = email
-                                        password = pass
-                                    }
-                                } else {
-                                    // Clear when unchecked
-                                    studentId = ""
-                                    password = ""
+                        if (maxWidth >= 300.dp) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                rememberRow()
+                                forgotButton()
+                            }
+                        } else {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                rememberRow()
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    forgotButton()
                                 }
                             }
-                        )
-
-                        Text(
-                            text = "Remember me",
-
-                            fontSize = 14.sp
-                        )
-                    }
-
-
-                    TextButton(
-                        onClick = { showForgotDialog = true }
-                    ) {
-
-                        Text(
-                            text = "Forgot Password?",
-
-                            color = PLMUNGreen,
-
-                            fontSize = 14.sp
-                        )
-                    }
-                }
-
-
-                val displayError = localErrorMessage ?: firebaseError
-
-                displayError?.let {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(text = it, color = Color.Red, fontSize = 13.sp)
-                }
-
-                Spacer(
-                    modifier = Modifier.height(10.dp)
-                )
-
-
-                Button(
-
-                    onClick = {
-                        localErrorMessage = when {
-                            studentId.isBlank() || password.isBlank() -> "Please fill in all fields."
-                            else -> null
                         }
+                    }
 
-                        if (localErrorMessage == null) {
-                            viewModel.saveCredentials(studentId, password, rememberMe)
-                            viewModel.signIn(
-                                email = studentId,
-                                password = password,
-                                onSuccess = onLoginClick
+
+                    val displayError = localErrorMessage ?: firebaseError
+
+                    displayError?.let {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
                             )
                         }
-                    },
+                    }
 
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(55.dp),
-
-                    enabled = !isLoading,
-
-                    shape = RoundedCornerShape(10.dp),
-
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PLMUNGreen
+                    Spacer(
+                        modifier = Modifier.height(18.dp)
                     )
-                ) {
+
 
                     if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(26.dp),
+                                color = UniFind.Primary,
+                                strokeWidth = 2.5.dp
+                            )
+                        }
                     } else {
-                        Text(
-                            text = "LOGIN",
-                            color = Color.White,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold
+                        PrimaryButton(
+                            text = "Sign In",
+                            onClick = {
+                                localErrorMessage = when {
+                                    studentId.isBlank() || password.isBlank() ->
+                                        "Please fill in all fields."
+                                    !studentId.contains("@") ->
+                                        "Please enter a valid email address."
+                                    !SchoolEmail.isAllowed(studentId) ->
+                                        SchoolEmail.REQUIREMENT_MESSAGE
+                                    else -> null
+                                }
+
+                                if (localErrorMessage == null) {
+                                    // Only persist the credentials once the sign-in
+                                    // actually succeeds — otherwise a failed attempt
+                                    // leaves a bad password saved for next launch.
+                                    viewModel.signIn(
+                                        email = studentId.trim(),
+                                        password = password,
+                                        onSuccess = {
+                                            viewModel.saveCredentials(
+                                                studentId.trim(),
+                                                password,
+                                                rememberMe
+                                            )
+                                            onLoginClick()
+                                        }
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
-                }
-
-
-                Spacer(
-                    modifier = Modifier.height(28.dp)
-                )
-
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(1.dp)
-                            .background(Color.LightGray)
-                    )
-
-
-                    Text(
-                        text = "  OR  ",
-
-                        color = Color.Gray,
-
-                        fontSize = 16.sp
-                    )
-
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(1.dp)
-                            .background(Color.LightGray)
-                    )
-                }
-
-
-                Spacer(
-                    modifier = Modifier.height(25.dp)
-                )
-
-
-                OutlinedButton(
-
-                    onClick = onCreateAccountClick,
-
-                    modifier = Modifier
-                        .width(280.dp)
-                        .height(55.dp),
-
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-
-                    Icon(
-
-                        imageVector = Icons.Default.Person,
-
-                        contentDescription =
-                            "Create Account",
-
-                        tint = PLMUNGreen
-                    )
 
 
                     Spacer(
-                        modifier = Modifier.width(8.dp)
+                        modifier = Modifier.height(20.dp)
                     )
 
 
-                    Text(
+                    // "or" divider
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(1.dp)
+                                .background(UniFind.Divider)
+                        )
 
-                        text = "Create New Account",
+                        Text(
+                            text = "or",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = UniFind.TextTertiary,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
 
-                        color = PLMUNGreen,
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(1.dp)
+                                .background(UniFind.Divider)
+                        )
+                    }
 
-                        fontSize = 16.sp
+
+                    Spacer(
+                        modifier = Modifier.height(20.dp)
                     )
+
+
+                    SecondaryButton(
+                        text = "Continue with Google",
+                        onClick = {
+                            val googleAction = onGoogleSignInClick
+                            when {
+                                // No real Web client ID in gradle.properties yet: say so
+                                // right under this button — the old message appeared above
+                                // "Sign In", so the tap looked like it did nothing.
+                                !isGoogleSignInConfigured() -> {
+                                    viewModel.clearError()
+                                    infoMessage = GOOGLE_SIGN_IN_NOT_SET_UP_MESSAGE
+                                }
+
+                                googleAction != null -> {
+                                    infoMessage = null
+                                    googleAction()
+                                }
+
+                                else -> {
+                                    infoMessage =
+                                        "Google sign-in isn't available yet. Sign in with your email instead."
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        icon = Icons.Outlined.Email
+                    )
+
+                    infoMessage?.let {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = UniFind.TextSecondary,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+
+                    Spacer(
+                        modifier = Modifier.height(14.dp)
+                    )
+
+
+                    // Don't have an account? Sign Up
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Don't have an account?",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = UniFind.TextSecondary
+                        )
+                        TextButton(
+                            onClick = onCreateAccountClick,
+                            contentPadding = PaddingValues(
+                                horizontal = 8.dp,
+                                vertical = 0.dp
+                            )
+                        ) {
+                            Text(
+                                text = "Sign Up",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = UniFind.Primary
+                            )
+                        }
+                    }
                 }
-
-                Spacer(modifier = Modifier.height(50.dp))
-                
-                // Move footer inside the scrollable column
-                GreenFooter(
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
+
+            // Footer as last item in scroll
+            GreenFooter(
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
+
+
+/** UniFind input-field colors: soft fill, outline, green focus border. */
+@Composable
+private fun loginFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = UniFind.Text,
+    unfocusedTextColor = UniFind.Text,
+    focusedContainerColor = UniFind.White,
+    unfocusedContainerColor = UniFind.SurfaceAlt,
+    focusedBorderColor = UniFind.Primary,
+    unfocusedBorderColor = UniFind.Outline,
+    errorBorderColor = MaterialTheme.colorScheme.error,
+    cursorColor = UniFind.Primary,
+    focusedLabelColor = UniFind.Primary,
+    unfocusedLabelColor = UniFind.TextSecondary,
+    focusedLeadingIconColor = UniFind.Primary,
+    unfocusedLeadingIconColor = UniFind.TextSecondary,
+    focusedTrailingIconColor = UniFind.TextSecondary,
+    unfocusedTrailingIconColor = UniFind.TextSecondary
+)
 
 
 @Composable
@@ -595,7 +651,8 @@ fun GreenFooter(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(115.dp)
+            // Grows past 115dp at large font scales instead of clipping the footer text.
+            .heightIn(min = 115.dp)
     ) {
 
 
@@ -639,7 +696,7 @@ fun GreenFooter(
             drawPath(
                 path = path,
 
-                color = PLMUNGreen
+                color = UniFind.Primary
             )
         }
 
@@ -657,18 +714,18 @@ fun GreenFooter(
             Text(
                 text = "Pamantasan ng Lungsod ng Muntinlupa",
 
-                color = Color.White,
+                style = MaterialTheme.typography.labelMedium,
 
-                fontSize = 13.sp
+                color = UniFind.OnPrimary
             )
 
 
             Text(
                 text = "Campus Lost & Found System",
 
-                color = Color.White,
+                style = MaterialTheme.typography.bodySmall,
 
-                fontSize = 13.sp
+                color = UniFind.OnPrimary.copy(alpha = 0.9f)
             )
         }
     }
